@@ -138,6 +138,7 @@ if __name__ == "__main__":
 
                 loss.backward()
                 optimizer.step()
+                optimizer.zero_grad()
 
             num_tr_batches += len(curr_train_subset) / args.batch_size
             log_and_maybe_print(f"[train] loss={train_loss / max(1, num_tr_batches):.3f}")
