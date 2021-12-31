@@ -1,7 +1,35 @@
 import ast
+import logging
+import os
 
 import numpy as np
 import pandas as pd
+from torch.utils.data import Dataset
+
+
+is_kaggle_env = os.path.exists("/kaggle")
+
+
+def log_and_maybe_print(s):
+    logging.info(s)
+    if is_kaggle_env:
+        print(s)
+
+
+class PCLTransformersDataset(Dataset):
+    def __init__(self, **kwargs):
+        self.valid_attrs = []
+        self.num_examples = 0
+        for attr, values in kwargs.items():
+            self.valid_attrs.append(attr)
+            setattr(self, attr, values)
+            self.num_examples = len(values)
+
+    def __getitem__(self, item):
+        return {k: getattr(self, k)[item] for k in self.valid_attrs}
+
+    def __len__(self):
+        return self.num_examples
 
 
 def load_binary_dataset(path):
