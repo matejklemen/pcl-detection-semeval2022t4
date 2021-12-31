@@ -16,8 +16,10 @@ if __name__ == "__main__":
     if not os.path.exists(args.target_dir):
         os.makedirs(args.target_dir)
 
-    for split_name in ["train", "dev", "test"]:
-        print(f"'{split_name}': {split[split_name].shape[0]} examples")
-        split[split_name].to_csv(os.path.join(args.target_dir, f"binary_pcl_{split_name}.tsv"), sep="\t", index=False)
+    # This script should only be used on the training data (not test set without labels!)
+    for split_name, save_name in zip(["train", "dev", "test"],
+                                     ["train", "tune", "dev"]):
+        print(f"'{save_name}': {split[split_name].shape[0]} examples")
+        split[split_name].to_csv(os.path.join(args.target_dir, f"binary_pcl_{save_name}.tsv"), sep="\t", index=False)
 
 
