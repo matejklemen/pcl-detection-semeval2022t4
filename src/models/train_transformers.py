@@ -35,12 +35,16 @@ parser.add_argument("--optimized_metric", type=str, default="loss",
                     choices=["loss", "f1_score", "p_score", "r_score"])
 
 parser.add_argument("--use_cpu", action="store_true")
+parser.add_argument("--random_seed", type=int, default=17)
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     DEVICE = torch.device("cpu") if args.use_cpu else torch.device("cuda")
     DEV_BATCH_SIZE = args.batch_size * 2
+
+    if args.random_seed is not None:
+        torch.manual_seed(args.random_seed)
 
     OPTIMIZED_METRIC = args.optimized_metric.lower()
     if args.experiment_dir is None:
