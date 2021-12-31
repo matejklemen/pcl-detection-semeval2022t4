@@ -1,19 +1,8 @@
 import ast
-import logging
-import os
 
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
-
-
-is_kaggle_env = os.path.exists("/kaggle")
-
-
-def log_and_maybe_print(s):
-    logging.info(s)
-    if is_kaggle_env:
-        print(s)
 
 
 class PCLTransformersDataset(Dataset):

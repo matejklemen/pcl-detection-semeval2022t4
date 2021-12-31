@@ -6,13 +6,13 @@ import sys
 from time import time, gmtime, strftime
 
 import torch
-from sklearn.metrics import f1_score, precision_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 from torch import optim
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification
 
-from src.data.utils import load_binary_dataset, PCLTransformersDataset, log_and_maybe_print
+from src.data.utils import load_binary_dataset, PCLTransformersDataset
 from src.models.utils import load_fast_tokenizer
 
 parser = argparse.ArgumentParser()
@@ -67,12 +67,12 @@ if __name__ == "__main__":
     for k, v in vars(args).items():
         v_str = str(v)
         v_str = f"...{v_str[-(50 - 3):]}" if len(v_str) > 50 else v_str
-        log_and_maybe_print(f"|{k:30s}|{v_str:50s}|")
+        logging.info(f"|{k:30s}|{v_str:50s}|")
 
-    log_and_maybe_print("Loading data...")
+    logging.info("Loading data...")
     train_df = load_binary_dataset(args.train_path)
     dev_df = load_binary_dataset(args.dev_path)
-    log_and_maybe_print(f"{train_df.shape[0]} train, {dev_df.shape[0]} dev examples")
+    logging.info(f"{train_df.shape[0]} train, {dev_df.shape[0]} dev examples")
 
     # Save the data along with the model in case we need it at a later point
     train_fname = args.train_path.split(os.path.sep)[-1]
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     train_df.to_csv(os.path.join(args.experiment_dir, train_fname), sep="\t", index=False)
     dev_df.to_csv(os.path.join(args.experiment_dir, dev_fname), sep="\t", index=False)
 
-    log_and_maybe_print("Loading tokenizer and model...")
+    logging.info("Loading tokenizer and model...")
 
     tokenizer = load_fast_tokenizer(tokenizer_type=args.model_type,
                                     pretrained_name_or_path=args.pretrained_name_or_path)
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     model = AutoModelForSequenceClassification.from_pretrained("roberta-base", return_dict=True).to(DEVICE)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)
 
-    log_and_maybe_print("Encoding data...")
+    logging.info("Encoding data...")
     train_enc = tokenizer.batch_encode_plus(train_df["text"].tolist(), return_tensors="pt",
                                             padding="max_length", truncation="only_first", max_length=args.max_length)
     train_enc["labels"] = torch.tensor(train_df["binary_label"].tolist())
@@ -113,16 +113,16 @@ if __name__ == "__main__":
         def is_better(_curr, _best):
             return _curr > _best
 
-    log_and_maybe_print("Starting training...")
+    logging.info("Starting training...")
     ts = time()
     for idx_epoch in range(args.max_epochs):
         train_loss, num_tr_batches = 0.0, 0
-        log_and_maybe_print(f"Epoch #{idx_epoch}...")
+        logging.info(f"Epoch #{idx_epoch}...")
         shuffled_indices = torch.randperm(len(train_dataset))
 
         num_train_subsets = (len(train_dataset) + args.eval_every_n_examples - 1) // args.eval_every_n_examples
         for idx_subset in range(num_train_subsets):
-            log_and_maybe_print(f"Subset #{idx_subset}...")
+            logging.info(f"Subset #{idx_subset}...")
             curr_indices = shuffled_indices[idx_subset * args.eval_every_n_examples:
                                             (idx_subset + 1) * args.eval_every_n_examples]
             curr_train_subset = Subset(train_dataset, curr_indices)
@@ -141,10 +141,10 @@ if __name__ == "__main__":
                 optimizer.zero_grad()
 
             num_tr_batches += len(curr_train_subset) / args.batch_size
-            log_and_maybe_print(f"[train] loss={train_loss / max(1, num_tr_batches):.3f}")
+            logging.info(f"[train] loss={train_loss / max(1, num_tr_batches):.3f}")
             if args.eval_every_n_examples / len(curr_train_subset) > 3:
-                log_and_maybe_print(f"Skipping validation because training subset was small "
-                                    f"({len(curr_train_subset)} < 1/3 * {args.eval_every_n_examples})")
+                logging.info(f"Skipping validation because training subset was small "
+                             f"({len(curr_train_subset)} < 1/3 * {args.eval_every_n_examples})")
                 continue
 
             # VALIDATION ###
@@ -173,25 +173,25 @@ if __name__ == "__main__":
                 "loss": dev_loss,
                 "f1_score": f1_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
                 "p_score": precision_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
-                "r_score": precision_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary')
+                "r_score": recall_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary')
             }
-            log_and_maybe_print(f"[dev] loss={dev_loss:.3f}, "
-                                f"P={dev_metrics['p_score']:.3f}, "
-                                f"R={dev_metrics['r_score']:.3f}, "
-                                f"F1={dev_metrics['f1_score']:.3f}")
+            logging.info(f"[dev] loss={dev_loss:.3f}, "
+                         f"P={dev_metrics['p_score']:.3f}, "
+                         f"R={dev_metrics['r_score']:.3f}, "
+                         f"F1={dev_metrics['f1_score']:.3f}")
 
             if is_better(_curr=dev_metrics[OPTIMIZED_METRIC], _best=best_dev_metric_value):
                 best_dev_metric_value = dev_metrics[OPTIMIZED_METRIC]
                 no_increase = 0
 
-                log_and_maybe_print(f"Improved validation {OPTIMIZED_METRIC}, saving model state...")
+                logging.info(f"Improved validation {OPTIMIZED_METRIC}, saving model state...")
                 model.save_pretrained(args.experiment_dir)
             else:
                 no_increase += 1
 
             if no_increase == args.early_stopping_tolerance:
-                log_and_maybe_print(f"Stopping training after validation {OPTIMIZED_METRIC} did not improve for "
-                                    f"{args.early_stopping_tolerance} checks...")
+                logging.info(f"Stopping training after validation {OPTIMIZED_METRIC} did not improve for "
+                             f"{args.early_stopping_tolerance} checks...")
                 stop_training = True
                 break
 
@@ -199,6 +199,5 @@ if __name__ == "__main__":
             break
 
     te = time()
-    log_and_maybe_print(f"Training took {te - ts:.3f}s /\n"
-                        f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
-
+    logging.info(f"Training took {te - ts:.3f}s /\n"
+                 f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
