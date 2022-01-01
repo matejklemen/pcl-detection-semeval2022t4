@@ -106,11 +106,9 @@ if __name__ == "__main__":
 
     dev_enc = tokenizer.batch_encode_plus(dev_df["text"].tolist(), return_tensors="pt",
                                           padding="max_length", truncation="only_first", max_length=args.max_length)
+    # Note: we do not want to change dev labels (0.5/0.5 would get turned from 1 to 0)
     label_probas = torch.zeros((dev_df.shape[0], 2), dtype=torch.float32)
-    if args.use_label_probas:
-        label_probas = torch.tensor(dev_df["proba_binary_label"].tolist(), dtype=torch.float32)
-    else:
-        label_probas[torch.arange(dev_df.shape[0]), dev_df["binary_label"].tolist()] = 1.0
+    label_probas[torch.arange(dev_df.shape[0]), dev_df["binary_label"].tolist()] = 1.0
 
     dev_enc["labels"] = label_probas
     dev_dataset = PCLTransformersDataset(**dev_enc)
