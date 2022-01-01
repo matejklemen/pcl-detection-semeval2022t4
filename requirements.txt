@@ -4,6 +4,6 @@
 # external requirements
 sklearn
 pandas
-torch
+torch>=1.10
 transformers
 tqdm
