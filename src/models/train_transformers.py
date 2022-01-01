@@ -8,6 +8,7 @@ from time import time, gmtime, strftime
 import torch
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch import optim
+from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification
@@ -16,6 +17,9 @@ from src.data.utils import load_binary_dataset, PCLTransformersDataset
 from src.models.utils import load_fast_tokenizer
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--use_label_probas", action="store_true",
+                    help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
+
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
                     default="/home/matej/Documents/multiview-pcl-detection/data/processed/binary_pcl_train.tsv")
@@ -91,12 +95,24 @@ if __name__ == "__main__":
     logging.info("Encoding data...")
     train_enc = tokenizer.batch_encode_plus(train_df["text"].tolist(), return_tensors="pt",
                                             padding="max_length", truncation="only_first", max_length=args.max_length)
-    train_enc["labels"] = torch.tensor(train_df["binary_label"].tolist())
+    label_probas = torch.zeros((train_df.shape[0], 2), dtype=torch.float32)
+    if args.use_label_probas:
+        label_probas = torch.tensor(train_df["proba_binary_label"].tolist(), dtype=torch.float32)
+    else:
+        label_probas[torch.arange(train_df.shape[0]), train_df["binary_label"].tolist()] = 1.0
+
+    train_enc["labels"] = label_probas
     train_dataset = PCLTransformersDataset(**train_enc)
 
     dev_enc = tokenizer.batch_encode_plus(dev_df["text"].tolist(), return_tensors="pt",
                                           padding="max_length", truncation="only_first", max_length=args.max_length)
-    dev_enc["labels"] = torch.tensor(dev_df["binary_label"].tolist())
+    label_probas = torch.zeros((dev_df.shape[0], 2), dtype=torch.float32)
+    if args.use_label_probas:
+        label_probas = torch.tensor(dev_df["proba_binary_label"].tolist(), dtype=torch.float32)
+    else:
+        label_probas[torch.arange(dev_df.shape[0]), dev_df["binary_label"].tolist()] = 1.0
+
+    dev_enc["labels"] = label_probas
     dev_dataset = PCLTransformersDataset(**dev_enc)
 
     stop_training = False
@@ -113,6 +129,7 @@ if __name__ == "__main__":
         def is_better(_curr, _best):
             return _curr > _best
 
+    ce_loss = CrossEntropyLoss()
     logging.info("Starting training...")
     ts = time()
     for idx_epoch in range(args.max_epochs):
@@ -133,7 +150,9 @@ if __name__ == "__main__":
                                     total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size)):
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
-                loss = model(**curr_batch)["loss"]
+                logits = model(**curr_batch)["logits"]
+                loss = ce_loss(logits, curr_batch["labels"])
+
                 train_loss += float(loss)
 
                 loss.backward()
@@ -157,7 +176,8 @@ if __name__ == "__main__":
                     curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                     res = model(**curr_batch)
-                    dev_loss += float(res["loss"])
+                    loss = ce_loss(res["logits"], curr_batch["labels"])
+                    dev_loss += float(loss)
                     probas = torch.softmax(res["logits"], dim=-1)
                     preds = torch.argmax(probas, dim=-1).cpu()
 
@@ -167,7 +187,7 @@ if __name__ == "__main__":
             dev_loss /= num_dev_batches
 
             dev_preds = torch.cat(dev_preds).numpy()
-            dev_correct = dev_dataset.labels.numpy()
+            dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
 
             dev_metrics = {
                 "loss": dev_loss,
