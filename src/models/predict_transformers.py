@@ -111,7 +111,11 @@ if __name__ == "__main__":
         sd_test_probas = torch.zeros_like(mean_test_probas, dtype=torch.float32)
 
     test_preds = torch.argmax(mean_test_probas, dim=-1).cpu().numpy()
-    pred_df = {"mean_pred_proba": mean_test_probas, "sd_pred_proba": sd_test_probas, "pred_label": test_preds.tolist()}
+    pred_df = {
+        "mean(y=PCL)": mean_test_probas[:, 1].numpy().tolist(),
+        "sd(y=PCL)": sd_test_probas[:, 1].numpy().tolist(),
+        "pred_label": test_preds.tolist()
+    }
     if "binary_label" in test_df.columns:
         test_correct = test_dataset.labels.numpy()
         pred_df["correct_label"] = test_correct.tolist()
