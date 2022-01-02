@@ -98,10 +98,6 @@ if __name__ == "__main__":
     label_probas = torch.zeros((train_df.shape[0], 2), dtype=torch.float32)
     if args.use_label_probas:
         label_probas = torch.tensor(train_df["proba_binary_label"].tolist(), dtype=torch.float32)
-        # Skew towards positive class in 0.5/0.5 case because that is a positive label in grouping of organizers
-        mask = torch.logical_and(0.49 < label_probas[:, 1], label_probas[:, 1] < 0.51)
-        label_probas[mask, 0] = 0.45
-        label_probas[mask, 0] = 0.55
     else:
         label_probas[torch.arange(train_df.shape[0]), train_df["binary_label"].tolist()] = 1.0
 
@@ -181,7 +177,7 @@ if __name__ == "__main__":
                     loss = ce_loss(res["logits"], curr_batch["labels"])
                     dev_loss += float(loss)
                     probas = torch.softmax(res["logits"], dim=-1)
-                    preds = torch.argmax(probas, dim=-1).cpu()
+                    preds = (probas[:, 1] >= 0.5).int().cpu()
 
                     dev_preds.append(preds)
 
