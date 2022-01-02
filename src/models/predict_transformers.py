@@ -5,6 +5,7 @@ import os
 import sys
 from time import gmtime, strftime
 
+import numpy as np
 import pandas as pd
 import torch
 from datasets import tqdm
@@ -128,6 +129,11 @@ if __name__ == "__main__":
                      f"P={test_metrics['p_score']:.3f}, "
                      f"R={test_metrics['r_score']:.3f}, "
                      f"F1={test_metrics['f1_score']:.3f}")
+
+        fn_indices = np.nonzero(np.logical_and(test_correct == 1, test_preds == 0))[0]
+        logging.info("Examples that should be marked as PCL (correct = 1), but are not (pred = 0)")
+        for idx_ex in fn_indices:
+            logging.info(f"{test_df['text'].iloc[idx_ex]}\n")
     else:
         logging.info(f"Skipping evaluation because no correct labels are provided inside 'binary_label' column.")
 
