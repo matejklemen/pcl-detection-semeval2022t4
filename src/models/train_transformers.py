@@ -177,7 +177,7 @@ if __name__ == "__main__":
                     loss = ce_loss(res["logits"], curr_batch["labels"])
                     dev_loss += float(loss)
                     probas = torch.softmax(res["logits"], dim=-1)
-                    preds = (probas[:, 1] >= 0.5).int().cpu()
+                    preds = torch.argmax(probas, dim=-1).cpu()
 
                     dev_preds.append(preds)
 
