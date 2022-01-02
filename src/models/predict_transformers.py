@@ -22,7 +22,7 @@ parser.add_argument("--test_path", type=str,
                     default="/home/matej/Documents/multiview-pcl-detection/data/processed/binary_pcl_tune.tsv")
 parser.add_argument("--model_type", type=str, default="roberta")
 
-parser.add_argument("--mcd_rounds", type=int, default=3)
+parser.add_argument("--mcd_rounds", type=int, default=0)
 
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--max_length", type=int, default=158)  # roberta-base: .95 = 114, .99 = 158
@@ -97,7 +97,7 @@ if __name__ == "__main__":
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
                 del curr_batch["labels"]
                 res = model(**curr_batch)
-                probas = torch.softmax(res["logits"], dim=-1)
+                probas = torch.softmax(res["logits"], dim=-1).cpu()
                 curr_test_probas.append(probas)
 
             test_probas.append(torch.cat(curr_test_probas))
