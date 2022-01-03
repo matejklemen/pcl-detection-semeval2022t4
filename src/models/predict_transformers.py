@@ -15,6 +15,7 @@ from transformers import AutoModelForSequenceClassification
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
 from src.models.utils import load_fast_tokenizer
+from src.visualization.visualize import visualize_bin_predictions
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--experiment_dir", type=str,
@@ -131,41 +132,12 @@ if __name__ == "__main__":
                      f"R={test_metrics['r_score']:.3f}, "
                      f"F1={test_metrics['f1_score']:.3f}")
 
-        visualization_html_rows.append("<h1>False positives (true = 0, pred = 1)</h1>")
-        fp_indices = np.nonzero(np.logical_and(test_correct == 0, test_preds == 1))[0]
-        visualization_html_rows.append(f"<h5>{fp_indices.shape[0]} examples</h5>")
-        for idx_ex in fp_indices:
-            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
-                                           f"{test_df['text'].iloc[idx_ex]}"
-                                           f"</div><br />")
-
-        visualization_html_rows.append("<h1>False negatives (true = 1, pred = 0)</h1>")
-        fn_indices = np.nonzero(np.logical_and(test_correct == 1, test_preds == 0))[0]
-        visualization_html_rows.append(f"<h5>{fn_indices.shape[0]} examples</h5>")
-        for idx_ex in fn_indices:
-            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
-                                           f"{test_df['text'].iloc[idx_ex]}"
-                                           f"</div><br />")
-
-        visualization_html_rows.append("<h1>True positives (true = 1, pred = 1)</h1>")
-        tp_indices = np.nonzero(np.logical_and(test_correct == 1, test_preds == 1))[0]
-        visualization_html_rows.append(f"<h5>{tp_indices.shape[0]} examples</h5>")
-        for idx_ex in tp_indices:
-            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
-                                           f"{test_df['text'].iloc[idx_ex]}"
-                                           f"</div><br />")
-
-        visualization_html_rows.append("<h1>True negatives (true = 0, pred = 0)</h1>")
-        tn_indices = np.nonzero(np.logical_and(test_correct == 0, test_preds == 0))[0]
-        visualization_html_rows.append(f"<h5>{tn_indices.shape[0]} examples</h5>")
-        for idx_ex in tn_indices:
-            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
-                                           f"{test_df['text'].iloc[idx_ex]}"
-                                           f"</div><br />")
-
-        logging.info("Saving visualization...")
-        with open(os.path.join(_experiment_dir, "pred_visualization.html"), "w", encoding="utf-8") as f:
-            print("<html><body>{}</body></html>".format("\n".join(visualization_html_rows)), file=f)
+        visualize_bin_predictions(texts=test_df["text"].tolist(),
+                                  preds=test_preds,
+                                  correct=test_correct,
+                                  mean_pos_probas=mean_test_probas[:, 1].numpy(),
+                                  sd_pos_probas=sd_test_probas[:, 1].numpy(),
+                                  visualization_save_path=os.path.join(_experiment_dir, "vis_predictions.html"))
     else:
         logging.info(f"Skipping evaluation because no correct labels are provided inside 'binary_label' column.")
 
