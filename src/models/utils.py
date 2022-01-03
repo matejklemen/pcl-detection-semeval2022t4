@@ -1,5 +1,8 @@
 from transformers import BertTokenizerFast, DistilBertTokenizerFast, RobertaTokenizerFast, XLMRobertaTokenizerFast, T5TokenizerFast, MT5TokenizerFast, ElectraTokenizerFast, XLNetTokenizerFast
 
+KEYWORDS = ["migrant", "women", "vulnerable", "refugee", "homeless",
+            "immigrant", "in-need", "disabled", "hopeless", "poor-families"]
+
 
 def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
     # There is no AutoTokenizerFast??

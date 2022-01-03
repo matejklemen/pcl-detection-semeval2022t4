@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForSequenceClassification
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import load_fast_tokenizer
+from src.models.utils import load_fast_tokenizer, KEYWORDS
 from src.visualization.visualize import visualize_bin_predictions
 
 parser = argparse.ArgumentParser()
@@ -74,7 +74,15 @@ if __name__ == "__main__":
     model = AutoModelForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
 
     logging.info("Encoding data...")
-    test_enc = tokenizer.batch_encode_plus(test_df["text"].tolist(), return_tensors="pt",
+    prepared_test_text = test_df["text"].tolist()
+    SET_KEYWORDS = set(KEYWORDS)
+    if args.use_keywords:
+        prepared_test_text = []
+        for curr_kw, curr_text in test_df[["keyword", "text"]].values:
+            formatted_kw = f"[{curr_kw.upper()}]" if curr_kw in SET_KEYWORDS else "[OTHER]"
+            prepared_test_text.append(f"{formatted_kw} {curr_text}")
+
+    test_enc = tokenizer.batch_encode_plus(prepared_test_text, return_tensors="pt",
                                            padding="max_length", truncation="only_first", max_length=args.max_length)
     if "binary_label" in test_df.columns:
         # NOTE: always using hard labels here because this is the test scenario
@@ -132,7 +140,7 @@ if __name__ == "__main__":
                      f"R={test_metrics['r_score']:.3f}, "
                      f"F1={test_metrics['f1_score']:.3f}")
 
-        visualize_bin_predictions(texts=test_df["text"].tolist(),
+        visualize_bin_predictions(texts=prepared_test_text,
                                   preds=test_preds,
                                   correct=test_correct,
                                   mean_pos_probas=mean_test_probas[:, 1].numpy(),

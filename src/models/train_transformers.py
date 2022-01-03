@@ -14,11 +14,12 @@ from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import load_fast_tokenizer
+from src.models.utils import load_fast_tokenizer, KEYWORDS
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
+parser.add_argument("--use_keywords", action="store_true")
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
@@ -88,12 +89,26 @@ if __name__ == "__main__":
 
     tokenizer = load_fast_tokenizer(tokenizer_type=args.model_type,
                                     pretrained_name_or_path=args.pretrained_name_or_path)
-    tokenizer.save_pretrained(args.experiment_dir)
     model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
-    optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)
 
     logging.info("Encoding data...")
-    train_enc = tokenizer.batch_encode_plus(train_df["text"].tolist(), return_tensors="pt",
+    prepared_train_text = train_df["text"].tolist()
+    SET_KEYWORDS = set(KEYWORDS)
+    if args.use_keywords:
+        tokenizer.add_special_tokens({
+            "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", KEYWORDS)) + ["[OTHER]"]
+        })
+        model.resize_token_embeddings(len(tokenizer))
+
+        prepared_train_text = []
+        for curr_kw, curr_text in train_df[["keyword", "text"]].values:
+            formatted_kw = f"[{curr_kw.upper()}]" if curr_kw in SET_KEYWORDS else "[OTHER]"
+            prepared_train_text.append(f"{formatted_kw} {curr_text}")
+
+    tokenizer.save_pretrained(args.experiment_dir)
+    optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)
+
+    train_enc = tokenizer.batch_encode_plus(prepared_train_text, return_tensors="pt",
                                             padding="max_length", truncation="only_first", max_length=args.max_length)
     label_probas = torch.zeros((train_df.shape[0], 2), dtype=torch.float32)
     if args.use_label_probas:
@@ -104,7 +119,13 @@ if __name__ == "__main__":
     train_enc["labels"] = label_probas
     train_dataset = PCLTransformersDataset(**train_enc)
 
-    dev_enc = tokenizer.batch_encode_plus(dev_df["text"].tolist(), return_tensors="pt",
+    prepared_dev_text = dev_df["text"].tolist()
+    if args.use_keywords:
+        prepared_dev_text = []
+        for curr_kw, curr_text in dev_df[["keyword", "text"]].values:
+            formatted_kw = f"[{curr_kw.upper()}]" if curr_kw in SET_KEYWORDS else "[OTHER]"
+            prepared_dev_text.append(f"{formatted_kw} {curr_text}")
+    dev_enc = tokenizer.batch_encode_plus(prepared_dev_text, return_tensors="pt",
                                           padding="max_length", truncation="only_first", max_length=args.max_length)
     # Note: we do not want to change dev labels (0.5/0.5 would get turned from 1 to 0)
     label_probas = torch.zeros((dev_df.shape[0], 2), dtype=torch.float32)
