@@ -118,6 +118,7 @@ if __name__ == "__main__":
         "pred_label": test_preds.tolist()
     }
     if "binary_label" in test_df.columns:
+        visualization_html_rows = []
         test_correct = test_dataset.labels.numpy()
         pred_df["correct_label"] = test_correct.tolist()
         test_metrics = {
@@ -130,16 +131,44 @@ if __name__ == "__main__":
                      f"R={test_metrics['r_score']:.3f}, "
                      f"F1={test_metrics['f1_score']:.3f}")
 
+        visualization_html_rows.append("<h1>False positives (true = 0, pred = 1)</h1>")
+        fp_indices = np.nonzero(np.logical_and(test_correct == 0, test_preds == 1))[0]
+        visualization_html_rows.append(f"<h5>{fp_indices.shape[0]} examples</h5>")
+        for idx_ex in fp_indices:
+            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
+                                           f"{test_df['text'].iloc[idx_ex]}"
+                                           f"</div><br />")
+
+        visualization_html_rows.append("<h1>False negatives (true = 1, pred = 0)</h1>")
         fn_indices = np.nonzero(np.logical_and(test_correct == 1, test_preds == 0))[0]
-        logging.info("Examples that should be marked as PCL (correct = 1), but are not (pred = 0)")
+        visualization_html_rows.append(f"<h5>{fn_indices.shape[0]} examples</h5>")
         for idx_ex in fn_indices:
-            logging.info(f"{test_df['text'].iloc[idx_ex]}\n")
+            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
+                                           f"{test_df['text'].iloc[idx_ex]}"
+                                           f"</div><br />")
+
+        visualization_html_rows.append("<h1>True positives (true = 1, pred = 1)</h1>")
+        tp_indices = np.nonzero(np.logical_and(test_correct == 1, test_preds == 1))[0]
+        visualization_html_rows.append(f"<h5>{tp_indices.shape[0]} examples</h5>")
+        for idx_ex in tp_indices:
+            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
+                                           f"{test_df['text'].iloc[idx_ex]}"
+                                           f"</div><br />")
+
+        visualization_html_rows.append("<h1>True negatives (true = 0, pred = 0)</h1>")
+        tn_indices = np.nonzero(np.logical_and(test_correct == 0, test_preds == 0))[0]
+        visualization_html_rows.append(f"<h5>{tn_indices.shape[0]} examples</h5>")
+        for idx_ex in tn_indices:
+            visualization_html_rows.append(f"<div><i>P(y=PCL) = {mean_test_probas[idx_ex, 1]:.2f} ({sd_test_probas[idx_ex, 1]})</i>:"
+                                           f"{test_df['text'].iloc[idx_ex]}"
+                                           f"</div><br />")
+
+        logging.info("Saving visualization...")
+        with open(os.path.join(_experiment_dir, "pred_visualization.html"), "w", encoding="utf-8") as f:
+            print("<html><body>{}</body></html>".format("\n".join(visualization_html_rows)), file=f)
     else:
         logging.info(f"Skipping evaluation because no correct labels are provided inside 'binary_label' column.")
 
     pd.DataFrame(pred_df).to_csv(os.path.join(_experiment_dir, "predictions.tsv"), sep="\t", index=False)
-
-    # TODO: visualization?
-    # ...
 
 
