@@ -22,6 +22,9 @@ DEPREL_TAGS = ["acl", "acl:relcl", "advcl", "advmod", "advmod:emph", "advmod:lmo
 MAX_ENTITIES_IN_DOC = 50
 COREF_ENTITY_TAGS = ["O"] + list(map(lambda i: f"[ENTITY{i}]", range(MAX_ENTITIES_IN_DOC)))
 
+SENTIMENT_TAGS = ["[NEG_SENT]", "[OBJ_SENT]", "[POS_SENT]", "[UNK_SENT]"]
+
+
 def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
     # There is no AutoTokenizerFast??
     assert tokenizer_type in ["bert", "distilbert", "roberta", "xlm-roberta", "xlnet"]

@@ -12,3 +12,5 @@ stanza
 # specific versions as neuralcoref is not being actively maintained anymore
 spacy==2.1.0
 neuralcoref==4.0
+
+nltk
