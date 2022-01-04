@@ -57,6 +57,7 @@ class NERRobertaForSequenceClassification(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.classifier = RobertaClassificationHead(config)
 
+        self.stream_weights = torch.tensor([0.01, 0.01], requires_grad=True)
         self.init_weights()
 
     def forward(
@@ -102,7 +103,8 @@ class NERRobertaForSequenceClassification(RobertaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        sequence_output = (outputs_main[0] + outputs_ner[0]) * 0.5  # TODO: learnable weights
+        norm_stream_weights = torch.softmax(self.stream_weights, dim=-1)
+        sequence_output = norm_stream_weights[0] * outputs_main[0] + norm_stream_weights[1] * outputs_ner[0]
         logits = self.classifier(sequence_output)
 
         loss = None
@@ -341,6 +343,7 @@ if __name__ == "__main__":
 
                 logging.info(f"Improved validation {OPTIMIZED_METRIC}, saving model state...")
                 model.save_pretrained(args.experiment_dir)
+                logging.info(f"Model linear weights : {model.stream_weights.detach().numpy().tolist()}")
             else:
                 no_increase += 1
 
