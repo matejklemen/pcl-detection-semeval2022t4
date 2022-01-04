@@ -227,7 +227,6 @@ if __name__ == "__main__":
     train_df.to_csv(os.path.join(args.experiment_dir, train_fname), sep="\t", index=False)
     dev_df.to_csv(os.path.join(args.experiment_dir, dev_fname), sep="\t", index=False)
 
-    spacy.prefer_gpu()
     nlp = spacy.load('en_core_web_sm')
     neuralcoref.add_to_pipe(nlp)
 
