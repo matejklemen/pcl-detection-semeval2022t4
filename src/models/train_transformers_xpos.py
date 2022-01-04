@@ -18,9 +18,9 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import UPOS_TAGS
+from src.models.utils import XPOS_TAGS
 
-""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include UPOS tags instead 
+""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include XPOS tags instead 
 of NER tags. """
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
@@ -48,7 +48,7 @@ parser.add_argument("--use_cpu", action="store_true")
 parser.add_argument("--random_seed", type=int, default=17)
 
 
-class UPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
+class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
@@ -69,7 +69,7 @@ class UPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
     def forward(
             self,
             input_ids=None,
-            upos_ids=None,
+            xpos_ids=None,
             attention_mask=None,
             token_type_ids=None,
             position_ids=None,
@@ -98,8 +98,8 @@ class UPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        outputs_upos = self.roberta(
-            upos_ids,
+        outputs_xpos = self.roberta(
+            xpos_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -110,7 +110,7 @@ class UPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
             return_dict=return_dict,
         )
         norm_stream_weights = torch.softmax(self.stream_weights, dim=-1)
-        sequence_output = norm_stream_weights[0] * outputs_main[0] + norm_stream_weights[1] * outputs_upos[0]
+        sequence_output = norm_stream_weights[0] * outputs_main[0] + norm_stream_weights[1] * outputs_xpos[0]
         logits = self.classifier(sequence_output)
 
         loss = None
@@ -158,19 +158,19 @@ def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: Li
             sent_toks_or_words, sent_tags = [], []
             for curr_word in curr_sent.words:
                 sent_toks_or_words.append(curr_word.text)
-                sent_tags.append(curr_word.upos)
+                sent_tags.append(curr_word.xpos)
 
             tokens_or_words.append(sent_toks_or_words)
             tags.append(sent_tags)
 
     encoded = hf_tokenizer.batch_encode_plus(tokens_or_words, is_split_into_words=True, return_tensors="pt",
                                              padding="max_length", truncation="only_first", max_length=max_length)
-    encoded["upos_ids"] = encoded["input_ids"].clone()
+    encoded["xpos_ids"] = encoded["input_ids"].clone()
     for idx_example in range(len(tokens_or_words)):
         for position, (curr_id, curr_word_id) in enumerate(zip(encoded["input_ids"][idx_example],
                                                                encoded.word_ids(batch_index=idx_example))):
             if curr_word_id is not None:
-                encoded["upos_ids"][idx_example, position] = \
+                encoded["xpos_ids"][idx_example, position] = \
                     tokenizer.encode(tags[idx_example][curr_word_id], add_special_tokens=False)[0]
 
     return encoded
@@ -220,11 +220,10 @@ if __name__ == "__main__":
 
     nlp = stanza.Pipeline("en", processors="tokenize,pos", tokenize_no_ssplit=True,
                           use_gpu=(not args.use_cpu))
-
-    model = UPOSRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
+    model = XPOSRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
     tokenizer.add_special_tokens({
-        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", UPOS_TAGS))
+        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", XPOS_TAGS))
     })
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
