@@ -347,7 +347,7 @@ if __name__ == "__main__":
 
                 logging.info(f"Improved validation {OPTIMIZED_METRIC}, saving model state...")
                 model.save_pretrained(args.experiment_dir)
-                logging.info(f"Model linear weights : {model.stream_weights.detach().numpy().tolist()}")
+                logging.info(f"Model linear weights : {model.stream_weights.detach().cpu().numpy().tolist()}")
             else:
                 no_increase += 1
 
