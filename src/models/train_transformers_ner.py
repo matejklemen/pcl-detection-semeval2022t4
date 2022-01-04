@@ -58,7 +58,8 @@ class NERRobertaForSequenceClassification(RobertaPreTrainedModel):
         self.classifier = RobertaClassificationHead(config)
 
         self.init_weights()
-        self.stream_weights = torch.normal(mean=0.0, std=self.config.initializer_range, requires_grad=True)
+        self.stream_weights = torch.normal(mean=torch.tensor([0.0, 0.0]),
+                                           std=torch.tensor([self.config.initializer_range, self.config.initializer_range]), requires_grad=True)
 
     def forward(
             self,
