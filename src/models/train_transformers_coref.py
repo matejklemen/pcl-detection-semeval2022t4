@@ -8,7 +8,6 @@ from typing import List
 import spacy
 import neuralcoref
 
-import stanza
 import torch
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch import optim

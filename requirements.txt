@@ -8,3 +8,7 @@ torch>=1.10
 transformers
 tqdm
 stanza
+
+# specific versions as neuralcoref is not being actively maintained anymore
+spacy==2.1.0
+neuralcoref==4.0
