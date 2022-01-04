@@ -10,6 +10,14 @@ XPOS_TAGS = ["CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR", "JJS", "LS", "MD",
              "POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO", "UH", "VB", "VBD", "VBG", "VBN", "VBP",
              "VBZ", "WDT", "WP", "WP$", "WRB"]
 
+DEPREL_TAGS = ["acl", "acl:relcl", "advcl", "advmod", "advmod:emph", "advmod:lmod", "amod", "appos", "aux", "aux:pass",
+               "case", "cc", "cc:preconj", "ccomp", "clf", "compound", "compound:lvc", "compound:prt", "compound:redup", "compound:svc",
+               "conj", "cop", "csubj", "csubj:pass", "dep", "det", "det:numgov", "det:nummod", "det:poss", "discourse",
+               "dislocated", "expl", "expl:impers", "expl:pass", "expl:pv", "fixed", "flat", "flat:foreign", "flat:name",
+               "goeswith", "iobj", "list", "mark", "nmod", "nmod:poss", "nmod:tmod", "nsubj", "nsubj:pass", "nummod", "nummod:gov",
+               "obj", "obl", "obl:agent", "obl:arg", "obl:lmod", "obl:tmod", "orphan", "parataxis", "punct", "reparandum",
+               "root", "vocative", "xcomp"]
+
 
 def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
     # There is no AutoTokenizerFast??
