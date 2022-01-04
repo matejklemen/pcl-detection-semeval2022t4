@@ -7,3 +7,4 @@ pandas
 torch>=1.10
 transformers
 tqdm
+stanza
