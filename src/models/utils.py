@@ -3,6 +3,12 @@ from transformers import BertTokenizerFast, DistilBertTokenizerFast, RobertaToke
 KEYWORDS = ["migrant", "women", "vulnerable", "refugee", "homeless",
             "immigrant", "in-need", "disabled", "hopeless", "poor-families"]
 NER_TAGS = ["O", "B-ORG", "I-ORG", "E-ORG", "B-PER", "I-PER", "E-PER", "B-LOC", "I-LOC", "E-LOC"]
+UPOS_TAGS = ["ADJ", "ADP", "ADV", "AUX", "CCONJ", "DET", "INTJ", "NOUN", "NUM", "PART", "PRON", "PROPN", "PUNCT",
+             "SCONJ", "SYM", "VERB", "X"]
+# Penn treebank tags
+XPOS_TAGS = ["CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR", "JJS", "LS", "MD", "NN", "NNS", "NNP", "NNPS", "PDT",
+             "POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO", "UH", "VB", "VBD", "VBG", "VBN", "VBP",
+             "VBZ", "WDT", "WP", "WP$", "WRB"]
 
 
 def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
