@@ -18,6 +18,9 @@ DEPREL_TAGS = ["acl", "acl:relcl", "advcl", "advmod", "advmod:emph", "advmod:lmo
                "obj", "obl", "obl:agent", "obl:arg", "obl:lmod", "obl:tmod", "orphan", "parataxis", "punct", "reparandum",
                "root", "vocative", "xcomp"]
 
+# Max 13 entities in training set (50 is way more than enough)
+MAX_ENTITIES_IN_DOC = 50
+COREF_ENTITY_TAGS = ["O"] + list(map(lambda i: f"[ENTITY{i}]", range(MAX_ENTITIES_IN_DOC)))
 
 def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
     # There is no AutoTokenizerFast??
