@@ -1,4 +1,6 @@
 import ast
+import logging
+from random import random
 
 import numpy as np
 import pandas as pd
@@ -21,10 +23,14 @@ class PCLTransformersDataset(Dataset):
         return self.num_examples
 
 
-def load_binary_dataset(path):
+def load_binary_dataset(path, sample_uncertain_labels: bool = False):
     _df = pd.read_csv(path, sep="\t")
     if "proba_binary_label" in _df.columns:
         _df["proba_binary_label"] = _df["proba_binary_label"].apply(ast.literal_eval)
+
+        if sample_uncertain_labels:
+            logging.info("Overriding 'binary_label' with sampled labels from 'proba_binary_labels'")
+            _df["binary_label"] = _df["proba_binary_label"].apply(lambda curr_probas: int(random() < curr_probas[1]))
 
     return _df
 
