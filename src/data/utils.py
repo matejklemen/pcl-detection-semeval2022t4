@@ -25,6 +25,8 @@ class PCLTransformersDataset(Dataset):
 
 def load_binary_dataset(path, sample_uncertain_labels: bool = False):
     _df = pd.read_csv(path, sep="\t")
+    _df = _df.loc[~_df["text"].isna()].reset_index(drop=True)
+
     if "proba_binary_label" in _df.columns:
         _df["proba_binary_label"] = _df["proba_binary_label"].apply(ast.literal_eval)
 
@@ -52,5 +54,5 @@ def train_dev_test_split(data):
 
 
 if __name__ == "__main__":
-    df = load_binary_dataset("/home/matej/Documents/multiview-pcl-detection/data/interim/binary_pcl.tsv")
-    split = train_dev_test_split(df)
+    data = load_binary_dataset("/home/matej/Documents/multiview-pcl-detection/data/interim/binary_pcl.tsv")
+    split = train_dev_test_split(data)
