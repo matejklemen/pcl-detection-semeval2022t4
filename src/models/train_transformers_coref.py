@@ -19,7 +19,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import NER_TAGS, COREF_ENTITY_TAGS, MAX_ENTITIES_IN_DOC
+from src.models.utils import COREF_ENTITY_TAGS, MAX_ENTITIES_IN_DOC, bracketed_representation
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
@@ -147,10 +147,8 @@ class CorefRobertaForSequenceClassification(RobertaPreTrainedModel):
 
 def process_spacy(spacy_model, hf_tokenizer, examples: List[str], max_length):
     tokens_or_words, tags = [], []
-    _num_clusters = []
     for idx_ex in tqdm(range(len(examples))):
         doc = spacy_model(examples[idx_ex])
-        _num_clusters.append(len(doc._.coref_clusters))
 
         curr_tokens, curr_tags = [], []
         for w in doc:
@@ -158,19 +156,18 @@ def process_spacy(spacy_model, hf_tokenizer, examples: List[str], max_length):
             clusters_of_w = w._.coref_clusters
 
             if w._.in_coref:
-                # Current simplification: assign to first cluster it belongs to (could also do random)
+                # Current simplification: assign to first cluster (could also do random - watch out for spans!)
                 first_cluster = clusters_of_w[0]
                 if first_cluster.i >= MAX_ENTITIES_IN_DOC:
-                    curr_tags.append("[O]")
+                    curr_tags.append(bracketed_representation("O"))
                 else:
-                    curr_tags.append(f"[ENTITY{first_cluster.i}]")  # TODO: combine BIO with coref tags?
+                    # TODO: combine NER with coref tags? (maybe even BIOES?)
+                    curr_tags.append(bracketed_representation(f"ENTITY{first_cluster.i}"))
             else:
-                curr_tags.append("[O]")
+                curr_tags.append(bracketed_representation("O"))
 
         tokens_or_words.append(curr_tokens)
         tags.append(curr_tags)
-
-    _num_clusters = sorted(_num_clusters)
 
     encoded = hf_tokenizer.batch_encode_plus(tokens_or_words, is_split_into_words=True, return_tensors="pt",
                                              padding="max_length", truncation="only_first", max_length=max_length)
@@ -232,9 +229,7 @@ if __name__ == "__main__":
 
     model = CorefRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
-    tokenizer.add_special_tokens({
-        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", COREF_ENTITY_TAGS))
-    })
+    tokenizer.add_special_tokens({"additional_special_tokens": COREF_ENTITY_TAGS})
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)

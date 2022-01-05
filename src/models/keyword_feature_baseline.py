@@ -14,6 +14,7 @@ from torch import optim
 from tqdm import tqdm
 
 from src.data.utils import load_binary_dataset
+from src.models.utils import KEYWORDS
 from src.visualization.visualize import visualize_bin_predictions
 
 parser = argparse.ArgumentParser()
@@ -77,8 +78,6 @@ if __name__ == "__main__":
     dev_df.to_csv(os.path.join(args.experiment_dir, dev_fname), sep="\t", index=False)
     test_df.to_csv(os.path.join(args.experiment_dir, test_fname), sep="\t", index=False)
 
-    KEYWORDS = ["migrant", "women", "vulnerable", "refugee", "homeless",
-                "immigrant", "in-need", "disabled", "hopeless", "poor-families"]
     keyword2idx = {kw: i for i, kw in enumerate(KEYWORDS)}
 
     train_features = np.zeros((train_df.shape[0], len(KEYWORDS)), dtype=np.float32)

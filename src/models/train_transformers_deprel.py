@@ -18,9 +18,9 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import XPOS_TAGS, DEPREL_TAGS
+from src.models.utils import DEPREL_TAGS, bracketed_representation
 
-""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include XPOS tags instead 
+""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include deprel tags instead 
 of NER tags. """
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
@@ -158,7 +158,7 @@ def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: Li
             sent_toks_or_words, sent_tags = [], []
             for curr_word in curr_sent.words:
                 sent_toks_or_words.append(curr_word.text)
-                sent_tags.append(curr_word.deprel)
+                sent_tags.append(bracketed_representation(curr_word.deprel))
 
             tokens_or_words.append(sent_toks_or_words)
             tags.append(sent_tags)
@@ -222,9 +222,7 @@ if __name__ == "__main__":
                           use_gpu=(not args.use_cpu))
     model = DeprelRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
-    tokenizer.add_special_tokens({
-        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", DEPREL_TAGS))
-    })
+    tokenizer.add_special_tokens({"additional_special_tokens": DEPREL_TAGS})
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)

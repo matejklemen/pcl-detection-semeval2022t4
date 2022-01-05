@@ -18,7 +18,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import UPOS_TAGS
+from src.models.utils import UPOS_TAGS, bracketed_representation
 
 """ Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include UPOS tags instead 
 of NER tags. """
@@ -158,7 +158,7 @@ def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: Li
             sent_toks_or_words, sent_tags = [], []
             for curr_word in curr_sent.words:
                 sent_toks_or_words.append(curr_word.text)
-                sent_tags.append(curr_word.upos)
+                sent_tags.append(bracketed_representation(curr_word.upos))
 
             tokens_or_words.append(sent_toks_or_words)
             tags.append(sent_tags)
@@ -223,9 +223,7 @@ if __name__ == "__main__":
 
     model = UPOSRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
-    tokenizer.add_special_tokens({
-        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", UPOS_TAGS))
-    })
+    tokenizer.add_special_tokens({"additional_special_tokens": UPOS_TAGS})
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)

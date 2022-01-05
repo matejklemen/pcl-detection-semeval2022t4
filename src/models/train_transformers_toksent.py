@@ -180,7 +180,8 @@ def process_sentiwordnet(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, exampl
                     sent_tags.append(
                         # The scores inside this list are ordered according to VALID_TAGS in models/utils.py
                         SENTIMENT_TAGS[
-                            int(np.argmax([swn_synset.neg_score(), swn_synset.obj_score(), swn_synset.pos_score()]))]
+                            int(np.argmax([swn_synset.neg_score(), swn_synset.obj_score(), swn_synset.pos_score()]))
+                        ]
                     )
                 else:
                     sent_tags.append(SENTIMENT_TAGS[-1])  # Unknown sentiment
@@ -252,9 +253,7 @@ if __name__ == "__main__":
 
     model = SentiWordnetRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
-    tokenizer.add_special_tokens({
-        "additional_special_tokens": list(map(lambda s: f"[{s.upper()}]", SENTIMENT_TAGS))
-    })
+    tokenizer.add_special_tokens({"additional_special_tokens": SENTIMENT_TAGS})
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)
