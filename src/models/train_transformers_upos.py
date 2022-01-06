@@ -6,6 +6,7 @@ import sys
 from time import time, strftime, gmtime
 from typing import List
 
+import pandas as pd
 import stanza
 import torch
 from sklearn.metrics import f1_score, precision_score, recall_score
@@ -28,9 +29,11 @@ parser.add_argument("--use_label_probas", action="store_true",
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
-                    default="/home/matej/Documents/multiview-pcl-detection/data/processed/binary_pcl_train.tsv")
+                    default="/home/matej/Documents/multiview-pcl-detection/data/processed/80_10_10/binary_pcl_train.tsv")
 parser.add_argument("--dev_path", type=str,
-                    default="/home/matej/Documents/multiview-pcl-detection/data/processed/binary_pcl_tune.tsv")
+                    default="/home/matej/Documents/multiview-pcl-detection/data/processed/80_10_10/binary_pcl_tune.tsv")
+parser.add_argument("--test_path", type=str,
+                    default=None)
 
 parser.add_argument("--model_type", type=str, default="roberta")
 parser.add_argument("--pretrained_name_or_path", type=str, default="roberta-base")
@@ -210,13 +213,21 @@ if __name__ == "__main__":
     logging.info("Loading data...")
     train_df = load_binary_dataset(args.train_path)
     dev_df = load_binary_dataset(args.dev_path)
-    logging.info(f"{train_df.shape[0]} train, {dev_df.shape[0]} dev examples")
+    test_df = None
+    if args.test_path is not None:
+        test_df = load_binary_dataset(args.test_path)
+
+    logging.info(f"{train_df.shape[0]} train, {dev_df.shape[0]} dev, "
+                 f"{0 if test_df is None else test_df.shape[0]} TEST examples")
 
     # Save the data along with the model in case we need it at a later point
     train_fname = args.train_path.split(os.path.sep)[-1]
     dev_fname = args.dev_path.split(os.path.sep)[-1]
     train_df.to_csv(os.path.join(args.experiment_dir, train_fname), sep="\t", index=False)
     dev_df.to_csv(os.path.join(args.experiment_dir, dev_fname), sep="\t", index=False)
+    if test_df is not None:
+        test_fname = args.test_path.split(os.path.sep)[-1]
+        test_df.to_csv(os.path.join(args.experiment_dir, test_fname), sep="\t", index=False)
 
     nlp = stanza.Pipeline("en", processors="tokenize,pos", tokenize_no_ssplit=True,
                           use_gpu=(not args.use_cpu))
@@ -251,6 +262,23 @@ if __name__ == "__main__":
 
     dev_enc["labels"] = label_probas
     dev_dataset = PCLTransformersDataset(**dev_enc)
+
+    test_enc = None
+    test_dataset = None
+    if test_df is not None:
+        test_enc = process_stanza(stanza_tokenizer=nlp,
+                                  hf_tokenizer=tokenizer,
+                                  examples=test_df["text"].tolist(),
+                                  max_length=args.max_length)
+
+        if "binary_label" in test_df.columns:
+            # Note: we do not want to change test labels (0.5/0.5 would get turned from 1 to 0)
+            label_probas = torch.zeros((test_df.shape[0], 2), dtype=torch.float32)
+            label_probas[torch.arange(test_df.shape[0]), test_df["binary_label"].tolist()] = 1.0
+
+            test_enc["labels"] = label_probas
+
+        test_dataset = PCLTransformersDataset(**test_enc)
 
     stop_training = False
     no_increase = 0
@@ -361,3 +389,43 @@ if __name__ == "__main__":
     te = time()
     logging.info(f"Training took {te - ts:.3f}s /\n"
                  f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
+
+    if test_enc is not None:
+        del model
+        model = UPOSRobertaForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
+        test_preds = []
+        test_probas = []
+        test_correct = None
+
+        with torch.no_grad():
+            model.eval()
+            for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=DEV_BATCH_SIZE),
+                                    total=((len(test_dataset) + DEV_BATCH_SIZE - 1) // DEV_BATCH_SIZE)):
+                curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+
+                res = model(**curr_batch)
+                probas = torch.softmax(res["logits"], dim=-1)
+                preds = torch.argmax(probas, dim=-1).cpu()
+
+                test_preds.append(preds)
+                test_probas.append(probas[:, 1].cpu())  # Save probability of positive label
+
+        test_probas = torch.cat(test_probas).numpy()
+        test_preds = torch.cat(test_preds).numpy()
+        if "binary_label" in test_df.columns:
+            test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
+            test_metrics = {
+                "f1_score": f1_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
+                "p_score": precision_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
+                "r_score": recall_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary')
+            }
+            logging.info(f"[test] P={test_metrics['p_score']:.3f}, "
+                         f"R={test_metrics['r_score']:.3f}, "
+                         f"F1={test_metrics['f1_score']:.3f}")
+
+        pd.DataFrame({
+            "pred_binary_label": test_preds.tolist(),
+            "proba_pcl_binary_label": test_probas.tolist()
+        }).to_csv(
+            os.path.join(args.experiment_dir, f"pred_{test_fname}"), sep="\t", index=False
+        )
