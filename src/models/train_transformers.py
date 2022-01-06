@@ -279,6 +279,7 @@ if __name__ == "__main__":
         del model
         model = AutoModelForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
         test_preds = []
+        test_probas = []
         test_correct = None
 
         with torch.no_grad():
@@ -292,7 +293,9 @@ if __name__ == "__main__":
                 preds = torch.argmax(probas, dim=-1).cpu()
 
                 test_preds.append(preds)
+                test_probas.append(probas[:, 1].cpu())  # Save probability of positive label
 
+        test_probas = torch.cat(test_probas).numpy()
         test_preds = torch.cat(test_preds).numpy()
         if "binary_label" in test_df.columns:
             test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
@@ -305,6 +308,9 @@ if __name__ == "__main__":
                          f"R={test_metrics['r_score']:.3f}, "
                          f"F1={test_metrics['f1_score']:.3f}")
 
-        pd.DataFrame({"pred_binary_label": test_preds.tolist()}).to_csv(
+        pd.DataFrame({
+            "pred_binary_label": test_preds.tolist(),
+            "proba_pcl_binary_label": test_probas.tolist()
+        }).to_csv(
             os.path.join(args.experiment_dir, f"pred_{test_fname}"), sep="\t", index=False
         )
