@@ -34,6 +34,13 @@ def load_binary_dataset(path, sample_uncertain_labels: bool = False):
             logging.info("Overriding 'binary_label' with sampled labels from 'proba_binary_labels'")
             _df["binary_label"] = _df["proba_binary_label"].apply(lambda curr_probas: int(random() < curr_probas[1]))
 
+    # Properly load preprocessed coreference information
+    if "spacy_tokens" in _df.columns:
+        _df["spacy_tokens"] = _df["spacy_tokens"].apply(ast.literal_eval)
+
+    if "spacy_coref" in _df.columns:
+        _df["spacy_coref"] = _df["spacy_coref"].apply(ast.literal_eval)
+
     return _df
 
 
