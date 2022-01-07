@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
 parser.add_argument("--use_keywords", action="store_true")
+parser.add_argument("--mcd_rounds", type=int, default=0)
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
@@ -275,28 +276,45 @@ if __name__ == "__main__":
     logging.info(f"Training took {te - ts:.3f}s /\n"
                  f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
 
+    logging.info("Starting prediction...")
+    if args.mcd_rounds > 0:
+        model.train()
+    else:
+        model.eval()
+
+    num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
+    test_probas = []
+
     if test_enc is not None:
         del model
         model = AutoModelForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
-        test_preds = []
         test_probas = []
         test_correct = None
 
         with torch.no_grad():
-            model.eval()
-            for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=DEV_BATCH_SIZE),
-                                    total=((len(test_dataset) + DEV_BATCH_SIZE - 1) // DEV_BATCH_SIZE)):
-                curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+            for idx_round in range(num_pred_rounds):
+                curr_test_probas = []
 
-                res = model(**curr_batch)
-                probas = torch.softmax(res["logits"], dim=-1)
-                preds = torch.argmax(probas, dim=-1).cpu()
+                for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=args.batch_size),
+                                        total=((len(test_dataset) + args.batch_size - 1) // args.batch_size)):
+                    curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+                    del curr_batch["labels"]
+                    res = model(**curr_batch)
+                    probas = torch.softmax(res["logits"], dim=-1).cpu()
+                    curr_test_probas.append(probas)
 
-                test_preds.append(preds)
-                test_probas.append(probas[:, 1].cpu())  # Save probability of positive label
+                test_probas.append(torch.cat(curr_test_probas))
 
-        test_probas = torch.cat(test_probas).numpy()
-        test_preds = torch.cat(test_preds).numpy()
+        test_probas = torch.stack(test_probas)
+        mean_test_probas = test_probas.mean(dim=0)
+        if num_pred_rounds > 1:
+            sd_test_probas = test_probas.std(dim=0)
+        else:
+            logging.info("Because only 1 prediction round is used, standard deviation is set to 0...")
+            sd_test_probas = torch.zeros_like(mean_test_probas, dtype=torch.float32)
+
+        test_preds = torch.argmax(mean_test_probas, dim=-1).cpu().numpy()
+
         if "binary_label" in test_df.columns:
             test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
             test_metrics = {
@@ -310,7 +328,9 @@ if __name__ == "__main__":
 
         pd.DataFrame({
             "pred_binary_label": test_preds.tolist(),
-            "proba_pcl_binary_label": test_probas.tolist()
+            "proba_pcl_binary_label": mean_test_probas[:, 1].tolist(),
+            # for each example, store predicted probabilities in each prediction round
+            "raw_proba": [test_probas[:, _idx, :].tolist() for _idx in range(len(test_dataset))]
         }).to_csv(
             os.path.join(args.experiment_dir, f"pred_{test_fname}"), sep="\t", index=False
         )
