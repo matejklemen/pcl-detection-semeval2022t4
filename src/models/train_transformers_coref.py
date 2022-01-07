@@ -197,13 +197,13 @@ if __name__ == "__main__":
     test_df = None
     if args.test_path is not None:
         test_df = load_binary_dataset(args.test_path)
+        assert "spacy_tokens" in test_df.columns and "spacy_coref" in test_df.columns
 
     logging.info(f"{train_df.shape[0]} train, {dev_df.shape[0]} dev, "
                  f"{0 if test_df is None else test_df.shape[0]} TEST examples")
 
     assert "spacy_tokens" in train_df.columns and "spacy_coref" in train_df.columns
     assert "spacy_tokens" in dev_df.columns and "spacy_coref" in dev_df.columns
-    assert "spacy_tokens" in test_df.columns and "spacy_coref" in test_df.columns
 
     # Save the data along with the model in case we need it at a later point
     train_fname = args.train_path.split(os.path.sep)[-1]
