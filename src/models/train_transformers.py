@@ -5,6 +5,7 @@ import os
 import sys
 from time import time, gmtime, strftime
 
+import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import f1_score, precision_score, recall_score
@@ -15,13 +16,15 @@ from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import load_fast_tokenizer, KEYWORDS, bracketed_representation
+from src.models.utils import load_fast_tokenizer, KEYWORDS, bracketed_representation, optimize_threshold
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
 parser.add_argument("--use_keywords", action="store_true")
 parser.add_argument("--mcd_rounds", type=int, default=0)
+parser.add_argument("--optimize_decision", type=str, default=None,
+                    choices=[None, "during_training", "after_training"])
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
@@ -40,7 +43,7 @@ parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--max_length", type=int, default=158)  # roberta-base: .95 = 114, .99 = 158
 parser.add_argument("--eval_every_n_examples", type=int, default=3000)
 parser.add_argument("--early_stopping_tolerance", type=int, default=5)
-parser.add_argument("--optimized_metric", type=str, default="loss",
+parser.add_argument("--optimized_metric", type=str, default="f1_score",
                     choices=["loss", "f1_score", "p_score", "r_score"])
 
 parser.add_argument("--use_cpu", action="store_true")
@@ -183,6 +186,7 @@ if __name__ == "__main__":
         def is_better(_curr, _best):
             return _curr > _best
 
+    best_pos_thresh = None
     ce_loss = CrossEntropyLoss()
     logging.info("Starting training...")
     ts = time()
@@ -222,7 +226,7 @@ if __name__ == "__main__":
 
             # VALIDATION ###
             dev_loss = 0.0
-            dev_preds = []
+            dev_probas = []
             with torch.no_grad():
                 model.eval()
                 for _curr_batch in tqdm(DataLoader(dev_dataset, batch_size=DEV_BATCH_SIZE),
@@ -233,15 +237,21 @@ if __name__ == "__main__":
                     loss = ce_loss(res["logits"], curr_batch["labels"])
                     dev_loss += float(loss)
                     probas = torch.softmax(res["logits"], dim=-1)
-                    preds = torch.argmax(probas, dim=-1).cpu()
 
-                    dev_preds.append(preds)
+                    dev_probas.append(probas)
 
             num_dev_batches = len(dev_dataset) / DEV_BATCH_SIZE
             dev_loss /= num_dev_batches
 
-            dev_preds = torch.cat(dev_preds).numpy()
             dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
+            dev_probas = torch.cat(dev_probas).numpy()
+            curr_opt_thresh = None
+            if args.optimize_decision == "during_training":
+                curr_opt_thresh, curr_best_metric_value = optimize_threshold(dev_correct, dev_probas[:, 1],
+                                                                             validated_metric=OPTIMIZED_METRIC)
+                dev_preds = (dev_probas[:, 1] >= curr_opt_thresh).astype(np.int32)
+            else:
+                dev_preds = np.argmax(dev_probas, axis=-1)
 
             dev_metrics = {
                 "loss": dev_loss,
@@ -257,6 +267,9 @@ if __name__ == "__main__":
             if is_better(_curr=dev_metrics[OPTIMIZED_METRIC], _best=best_dev_metric_value):
                 best_dev_metric_value = dev_metrics[OPTIMIZED_METRIC]
                 no_increase = 0
+
+                if args.optimize_decision == "during_training":
+                    best_pos_thresh = curr_opt_thresh
 
                 logging.info(f"Improved validation {OPTIMIZED_METRIC}, saving model state...")
                 model.save_pretrained(args.experiment_dir)
@@ -275,6 +288,52 @@ if __name__ == "__main__":
     te = time()
     logging.info(f"Training took {te - ts:.3f}s /\n"
                  f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
+
+    ########################################################
+    # Perform decision boundary tuning in a setting equivalent to the test one, but on dev data
+    if args.optimize_decision == "after_training":
+        del model
+        model = AutoModelForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
+        if args.mcd_rounds > 0:
+            model.train()
+        else:
+            model.eval()
+
+        dev_probas = []
+        dev_correct = None
+        num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
+
+        with torch.no_grad():
+            for idx_round in range(num_pred_rounds):
+                curr_dev_probas = []
+
+                for _curr_batch in tqdm(DataLoader(dev_dataset, batch_size=args.batch_size),
+                                        total=((len(dev_dataset) + args.batch_size - 1) // args.batch_size)):
+                    curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+                    del curr_batch["labels"]
+                    res = model(**curr_batch)
+                    probas = torch.softmax(res["logits"], dim=-1).cpu()
+                    curr_dev_probas.append(probas)
+
+                dev_probas.append(torch.cat(curr_dev_probas))
+
+        dev_probas = torch.stack(dev_probas)
+        mean_dev_probas = dev_probas.mean(dim=0)
+        dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
+        best_pos_thresh, curr_best_metric_value = optimize_threshold(dev_correct, mean_dev_probas[:, 1],
+                                                                     validated_metric=OPTIMIZED_METRIC)
+        dev_preds = (mean_dev_probas[:, 1] >= best_pos_thresh).astype(np.int32)
+        dev_metrics = {
+            "f1_score": f1_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
+            "p_score": precision_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
+            "r_score": recall_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary')
+        }
+        logging.info(f"[after training] T={best_pos_thresh}, "
+                     f"P={dev_metrics['p_score']:.3f}, "
+                     f"R={dev_metrics['r_score']:.3f}, "
+                     f"F1={dev_metrics['f1_score']:.3f}")
+
+    #########################################################
 
     logging.info("Starting prediction...")
     num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
@@ -313,7 +372,12 @@ if __name__ == "__main__":
             logging.info("Because only 1 prediction round is used, standard deviation is set to 0...")
             sd_test_probas = torch.zeros_like(mean_test_probas, dtype=torch.float32)
 
-        test_preds = torch.argmax(mean_test_probas, dim=-1).cpu().numpy()
+        if args.optimize_decision is None:
+            test_preds = torch.argmax(mean_test_probas, dim=-1).cpu().numpy()
+        else:
+            logging.info(f"Using T={best_pos_thresh}")
+            np_mean_test_probas = mean_test_probas.numpy()
+            test_preds = (np_mean_test_probas[:, 1] >= best_pos_thresh).astype(np.int32)
 
         if "binary_label" in test_df.columns:
             test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()

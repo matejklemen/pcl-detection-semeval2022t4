@@ -1,3 +1,5 @@
+import numpy as np
+from sklearn.metrics import precision_score, recall_score, f1_score
 from transformers import BertTokenizerFast, DistilBertTokenizerFast, RobertaTokenizerFast, XLMRobertaTokenizerFast, XLNetTokenizerFast
 
 KEYWORDS = ["migrant", "women", "vulnerable", "refugee", "homeless",
@@ -63,3 +65,26 @@ def load_fast_tokenizer(tokenizer_type, pretrained_name_or_path):
         return XLMRobertaTokenizerFast.from_pretrained(pretrained_name_or_path)
     elif tokenizer_type == "xlnet":
         return XLNetTokenizerFast.from_pretrained(pretrained_name_or_path)
+
+
+def optimize_threshold(y_true, y_proba_pos, validated_metric):
+    assert validated_metric in ["p_score", "r_score", "f1_score"]
+    if validated_metric == "p_score":
+        metric_fn = precision_score
+    elif validated_metric == "r_score":
+        metric_fn = recall_score
+    else:
+        metric_fn = f1_score
+
+    valid_thresholds = sorted(list(set(y_proba_pos)))
+    best_thresh, best_metric_value = None, 0.0
+    for curr_thresh in valid_thresholds:
+        curr_preds = (y_proba_pos >= curr_thresh).astype(np.int32)
+        curr_metric_value = metric_fn(y_true=y_true, y_pred=curr_preds,
+                                      pos_label=1, average='binary')
+
+        if curr_metric_value > best_metric_value:
+            best_metric_value = curr_metric_value
+            best_thresh = curr_thresh
+
+    return best_thresh, best_metric_value
