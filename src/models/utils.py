@@ -44,6 +44,8 @@ DEPREL_TAGS = list(map(bracketed_representation,
 MAX_ENTITIES_IN_DOC = 50
 COREF_ENTITY_TAGS = list(map(bracketed_representation,
                              ["O"] + [f"ENTITY{_i}" for _i in range(MAX_ENTITIES_IN_DOC)]))
+COREF_SEQ_ENTITY_TAGS = list(map(bracketed_representation, [f"ENTITY{_i}" for _i in range(MAX_ENTITIES_IN_DOC)])) + \
+                        list(map(bracketed_representation, [f"/ENTITY{_i}" for _i in range(MAX_ENTITIES_IN_DOC)]))
 
 SENTIMENT_TAGS = list(map(bracketed_representation,
                           ["NEG_SENT", "OBJ_SENT", "POS_SENT", "UNK_SENT"]))
