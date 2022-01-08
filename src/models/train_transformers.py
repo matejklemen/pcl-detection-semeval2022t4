@@ -277,17 +277,17 @@ if __name__ == "__main__":
                  f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
 
     logging.info("Starting prediction...")
-    if args.mcd_rounds > 0:
-        model.train()
-    else:
-        model.eval()
-
     num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
     test_probas = []
 
     if test_enc is not None:
         del model
         model = AutoModelForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
+        if args.mcd_rounds > 0:
+            model.train()
+        else:
+            model.eval()
+
         test_probas = []
         test_correct = None
 
