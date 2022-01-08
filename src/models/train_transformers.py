@@ -244,7 +244,7 @@ if __name__ == "__main__":
             dev_loss /= num_dev_batches
 
             dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
-            dev_probas = torch.cat(dev_probas).numpy()
+            dev_probas = torch.cat(dev_probas).cpu().numpy()
             curr_opt_thresh = None
             if args.optimize_decision == "during_training":
                 curr_opt_thresh, curr_best_metric_value = optimize_threshold(dev_correct, dev_probas[:, 1],
@@ -318,7 +318,7 @@ if __name__ == "__main__":
                 dev_probas.append(torch.cat(curr_dev_probas))
 
         dev_probas = torch.stack(dev_probas)
-        mean_dev_probas = dev_probas.mean(dim=0)
+        mean_dev_probas = dev_probas.mean(dim=0).cpu().numpy()
         dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
         best_pos_thresh, curr_best_metric_value = optimize_threshold(dev_correct, mean_dev_probas[:, 1],
                                                                      validated_metric=OPTIMIZED_METRIC)
