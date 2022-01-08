@@ -13,7 +13,12 @@ NER_TAGS = list(map(bracketed_representation,
                     ["O",
                      "B-ORG", "I-ORG", "E-ORG", "S-ORG",
                      "B-PER", "I-PER", "E-PER", "S-PER",
-                     "B-LOC", "I-LOC", "E-LOC", "S-LOC"]))
+                     "B-LOC", "I-LOC", "E-LOC", "S-LOC",
+                     "B-MISC", "I-MISC", "E-MISC", "S-MISC"]))
+
+NER_SEQ_TAGS = list(map(bracketed_representation,
+                        ["ORG", "/ORG", "PER", "/PER", "LOC", "/LOC", "MISC", "/MISC"]))
+
 UPOS_TAGS = list(map(bracketed_representation,
                      ["ADJ", "ADP", "ADV", "AUX", "CCONJ", "DET", "INTJ", "NOUN", "NUM", "PART", "PRON", "PROPN",
                       "PUNCT", "SCONJ", "SYM", "VERB", "X"]))
