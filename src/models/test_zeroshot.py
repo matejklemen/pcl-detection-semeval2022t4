@@ -38,7 +38,7 @@ if __name__ == "__main__":
         logger.addHandler(curr_handler)
 
     tokenizer = load_fast_tokenizer(args.model_type, args.pretrained_name_or_path)
-    model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_name_or_path)
+    model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_name_or_path).to(DEVICE)
     model.eval()
 
     KEYWORD = "patronizing"
