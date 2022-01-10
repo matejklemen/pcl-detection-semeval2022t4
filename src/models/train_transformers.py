@@ -206,7 +206,6 @@ if __name__ == "__main__":
 
             # TRAINING ###
             model.train()
-            accumulated_loss = 0.0
             for idx_batch, _curr_batch in enumerate(
                     tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
                          total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size))
@@ -215,22 +214,18 @@ if __name__ == "__main__":
 
                 logits = model(**curr_batch)["logits"]
                 loss = ce_loss(logits, curr_batch["labels"])
-                accumulated_loss += loss
 
                 train_loss += float(loss)
 
+                loss.backward()
                 if idx_batch % args.accumulation_steps == (args.accumulation_steps - 1):
-                    accumulated_loss.backward()
                     optimizer.step()
                     optimizer.zero_grad()
-                    accumulated_loss = 0.0
 
             # Left-over loss in case num_training_batches % accumulation_steps > 0
-            if accumulated_loss > 0.0:
-                accumulated_loss.backward()
+            if len(curr_train_subset) % (args.batch_size * args.accumulation_steps) > 0:
                 optimizer.step()
                 optimizer.zero_grad()
-                accumulated_loss = 0.0
 
             num_tr_batches += len(curr_train_subset) / args.batch_size
             logging.info(f"[train] loss={train_loss / max(1, num_tr_batches):.3f}")
