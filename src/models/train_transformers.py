@@ -108,7 +108,7 @@ if __name__ == "__main__":
                                     pretrained_name_or_path=args.pretrained_name_or_path)
     model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_name_or_path,
                                                                return_dict=True,
-                                                               num_labels=2).to(DEVICE)
+                                                               num_labels=2, ignore_mismatched_sizes=True).to(DEVICE)
 
     logging.info("Encoding data...")
     prepared_train_text = train_df["text"].tolist()
