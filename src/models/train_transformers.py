@@ -216,6 +216,7 @@ if __name__ == "__main__":
                 loss = ce_loss(logits, curr_batch["labels"])
 
                 train_loss += float(loss)
+                loss /= args.accumulation_steps
 
                 loss.backward()
                 if idx_batch % args.accumulation_steps == (args.accumulation_steps - 1):
