@@ -39,6 +39,7 @@ parser.add_argument("--pretrained_name_or_path", type=str, default="roberta-base
 
 parser.add_argument("--max_epochs", type=int, default=10)
 parser.add_argument("--learning_rate", type=float, default=2e-5)
+parser.add_argument("--accumulation_steps", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--max_length", type=int, default=158)  # roberta-base: .95 = 114, .99 = 158
 parser.add_argument("--eval_every_n_examples", type=int, default=3000)
@@ -54,6 +55,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     DEVICE = torch.device("cpu") if args.use_cpu else torch.device("cuda")
     DEV_BATCH_SIZE = args.batch_size * 2
+    assert args.accumulation_steps >= 1
 
     if args.random_seed is not None:
         torch.manual_seed(args.random_seed)
@@ -204,18 +206,31 @@ if __name__ == "__main__":
 
             # TRAINING ###
             model.train()
-            for _curr_batch in tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
-                                    total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size)):
+            accumulated_loss = 0.0
+            for idx_batch, _curr_batch in enumerate(
+                    tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
+                         total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size))
+            ):
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                 logits = model(**curr_batch)["logits"]
                 loss = ce_loss(logits, curr_batch["labels"])
+                accumulated_loss += loss
 
                 train_loss += float(loss)
 
-                loss.backward()
+                if idx_batch % args.accumulation_steps == (args.accumulation_steps - 1):
+                    accumulated_loss.backward()
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    accumulated_loss = 0.0
+
+            # Left-over loss in case num_training_batches % accumulation_steps > 0
+            if accumulated_loss > 0.0:
+                accumulated_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                accumulated_loss = 0.0
 
             num_tr_batches += len(curr_train_subset) / args.batch_size
             logging.info(f"[train] loss={train_loss / max(1, num_tr_batches):.3f}")
