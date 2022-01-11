@@ -212,10 +212,12 @@ if __name__ == "__main__":
                     tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
                          total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size))
             ):
+                correct_labels = _curr_batch["labels"].to(DEVICE)
+                del _curr_batch["labels"]
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                 logits = model(**curr_batch)["logits"]
-                loss = ce_loss(logits, curr_batch["labels"])
+                loss = ce_loss(logits, correct_labels)
 
                 train_loss += float(loss)
                 loss /= args.accumulation_steps
@@ -244,10 +246,12 @@ if __name__ == "__main__":
                 model.eval()
                 for _curr_batch in tqdm(DataLoader(dev_dataset, batch_size=DEV_BATCH_SIZE),
                                         total=((len(dev_dataset) + DEV_BATCH_SIZE - 1) // DEV_BATCH_SIZE)):
+                    correct_labels = _curr_batch["labels"].to(DEVICE)
+                    del _curr_batch["labels"]
                     curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                     res = model(**curr_batch)
-                    loss = ce_loss(res["logits"], curr_batch["labels"])
+                    loss = ce_loss(res["logits"], correct_labels)
                     dev_loss += float(loss)
                     probas = torch.softmax(res["logits"], dim=-1)
 
