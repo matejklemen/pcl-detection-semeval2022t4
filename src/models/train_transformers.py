@@ -354,7 +354,6 @@ if __name__ == "__main__":
 
     logging.info("Starting prediction...")
     num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
-    test_probas = []
 
     if test_enc is not None:
         del model
