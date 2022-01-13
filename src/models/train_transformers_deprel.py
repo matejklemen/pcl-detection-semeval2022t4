@@ -44,6 +44,7 @@ parser.add_argument("--pretrained_name_or_path", type=str, default="roberta-base
 
 parser.add_argument("--max_epochs", type=int, default=10)
 parser.add_argument("--learning_rate", type=float, default=2e-5)
+parser.add_argument("--accumulation_steps", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--max_length", type=int, default=158)  # roberta-base: .95 = 114, .99 = 158
 parser.add_argument("--eval_every_n_examples", type=int, default=3000)
@@ -317,16 +318,27 @@ if __name__ == "__main__":
 
             # TRAINING ###
             model.train()
-            for _curr_batch in tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
-                                    total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size)):
+            for idx_batch, _curr_batch in enumerate(
+                    tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
+                         total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size))
+            ):
+                correct_labels = _curr_batch["labels"].to(DEVICE)
+                del _curr_batch["labels"]
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                 logits = model(**curr_batch)["logits"]
-                loss = ce_loss(logits, curr_batch["labels"])
+                loss = ce_loss(logits, correct_labels)
 
                 train_loss += float(loss)
+                loss /= args.accumulation_steps
 
                 loss.backward()
+                if idx_batch % args.accumulation_steps == (args.accumulation_steps - 1):
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+            # Left-over loss in case num_training_batches % accumulation_steps > 0
+            if len(curr_train_subset) % (args.batch_size * args.accumulation_steps) > 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
