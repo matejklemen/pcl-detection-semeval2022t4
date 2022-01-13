@@ -477,7 +477,6 @@ if __name__ == "__main__":
                 for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=args.batch_size),
                                         total=((len(test_dataset) + args.batch_size - 1) // args.batch_size)):
                     curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
-                    del curr_batch["labels"]
                     res = model(**curr_batch)
                     probas = torch.softmax(res["logits"], dim=-1).cpu()
                     curr_test_probas.append(probas)
@@ -500,7 +499,6 @@ if __name__ == "__main__":
             test_preds = (np_mean_test_probas[:, 1] >= best_pos_thresh).astype(np.int32)
 
         if "binary_label" in test_df.columns:
-            test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
             test_metrics = {
                 "f1_score": f1_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
                 "p_score": precision_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),

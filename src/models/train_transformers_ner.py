@@ -498,7 +498,6 @@ if __name__ == "__main__":
                 test_preds = (np_mean_test_probas[:, 1] >= best_pos_thresh).astype(np.int32)
 
         if "binary_label" in test_df.columns:
-            test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
             test_metrics = {
                 "f1_score": f1_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
                 "p_score": precision_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
