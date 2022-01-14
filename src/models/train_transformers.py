@@ -86,6 +86,9 @@ if __name__ == "__main__":
 
     logging.info("Loading data...")
     train_df = load_binary_dataset(args.train_path, sample_uncertain_labels=args.sample_uncertain_labels)
+    if args.sample_uncertain_labels:
+        logging.info(f"Training distribution: \n{train_df['binary_label'].value_counts()}")
+
     dev_df = load_binary_dataset(args.dev_path)
     test_df = None
     if args.test_path is not None:
