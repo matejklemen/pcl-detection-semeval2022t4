@@ -194,7 +194,7 @@ if __name__ == "__main__":
         "mean(y=PCL)": dev_probas[:, 1].tolist(),
         "sd(y=PCL)": np.zeros_like(dev_probas[:, 1]).tolist(),
         "pred_label": dev_preds.tolist(),
-        "correct_label": test_labels.tolist()
+        "correct_label": dev_labels.tolist()
     }).to_csv(os.path.join(args.experiment_dir, "dev_predictions.tsv"), sep="\t", index=False)
 
     # TEST ###
