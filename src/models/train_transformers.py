@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
 parser.add_argument("--use_keywords", action="store_true")
+parser.add_argument("--sample_uncertain_labels", action="store_true")
 parser.add_argument("--mcd_rounds", type=int, default=0)
 parser.add_argument("--optimize_decision", type=str, default=None,
                     choices=[None, "during_training", "after_training"])
@@ -84,7 +85,7 @@ if __name__ == "__main__":
         logging.info(f"|{k:30s}|{v_str:50s}|")
 
     logging.info("Loading data...")
-    train_df = load_binary_dataset(args.train_path)
+    train_df = load_binary_dataset(args.train_path, sample_uncertain_labels=args.sample_uncertain_labels)
     dev_df = load_binary_dataset(args.dev_path)
     test_df = None
     if args.test_path is not None:
