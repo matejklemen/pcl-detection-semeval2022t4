@@ -19,13 +19,15 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import XPOS_TAGS, bracketed_representation
+from src.models.utils import UPOS_TAGS, XPOS_TAGS, bracketed_representation
 
-""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include XPOS tags instead 
+""" Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include UPOS tags instead 
 of NER tags. """
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
+parser.add_argument("--pos_type", type=str, default="upos",
+                    choices=["upos", "xpos"])
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
@@ -51,7 +53,7 @@ parser.add_argument("--use_cpu", action="store_true")
 parser.add_argument("--random_seed", type=int, default=17)
 
 
-class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
+class POSRobertaForSequenceClassification(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
@@ -72,7 +74,7 @@ class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
     def forward(
             self,
             input_ids=None,
-            xpos_ids=None,
+            upos_ids=None,
             attention_mask=None,
             token_type_ids=None,
             position_ids=None,
@@ -101,8 +103,8 @@ class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        outputs_xpos = self.roberta(
-            xpos_ids,
+        outputs_upos = self.roberta(
+            upos_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -113,7 +115,7 @@ class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
             return_dict=return_dict,
         )
         norm_stream_weights = torch.softmax(self.stream_weights, dim=-1)
-        sequence_output = norm_stream_weights[0] * outputs_main[0] + norm_stream_weights[1] * outputs_xpos[0]
+        sequence_output = norm_stream_weights[0] * outputs_main[0] + norm_stream_weights[1] * outputs_upos[0]
         logits = self.classifier(sequence_output)
 
         loss = None
@@ -149,7 +151,9 @@ class XPOSRobertaForSequenceClassification(RobertaPreTrainedModel):
         )
 
 
-def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: List[str], max_length):
+def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: List[str], max_length,
+                   pos_type="upos"):
+    assert pos_type in ["upos", "xpos"]
     tokens_or_words, tags = [], []
 
     STANZA_BATCH_SIZE = 1024
@@ -161,19 +165,19 @@ def process_stanza(stanza_tokenizer: stanza.Pipeline, hf_tokenizer, examples: Li
             sent_toks_or_words, sent_tags = [], []
             for curr_word in curr_sent.words:
                 sent_toks_or_words.append(curr_word.text)
-                sent_tags.append(bracketed_representation(curr_word.xpos))
+                sent_tags.append(bracketed_representation(getattr(curr_word, pos_type)))
 
             tokens_or_words.append(sent_toks_or_words)
             tags.append(sent_tags)
 
     encoded = hf_tokenizer.batch_encode_plus(tokens_or_words, is_split_into_words=True, return_tensors="pt",
                                              padding="max_length", truncation="only_first", max_length=max_length)
-    encoded["xpos_ids"] = encoded["input_ids"].clone()
+    encoded[f"{pos_type}_ids"] = encoded["input_ids"].clone()
     for idx_example in range(len(tokens_or_words)):
         for position, (curr_id, curr_word_id) in enumerate(zip(encoded["input_ids"][idx_example],
                                                                encoded.word_ids(batch_index=idx_example))):
             if curr_word_id is not None:
-                encoded["xpos_ids"][idx_example, position] = \
+                encoded[f"{pos_type}_ids"][idx_example, position] = \
                     tokenizer.encode(tags[idx_example][curr_word_id], add_special_tokens=False)[0]
 
     return encoded
@@ -231,9 +235,13 @@ if __name__ == "__main__":
 
     nlp = stanza.Pipeline("en", processors="tokenize,pos", tokenize_no_ssplit=True,
                           use_gpu=(not args.use_cpu))
-    model = XPOSRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
+
+    model = POSRobertaForSequenceClassification.from_pretrained(args.pretrained_name_or_path, return_dict=True).to(DEVICE)
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base", add_prefix_space=True)
-    tokenizer.add_special_tokens({"additional_special_tokens": XPOS_TAGS})
+    if args.pos_type == "upos":
+        tokenizer.add_special_tokens({"additional_special_tokens": UPOS_TAGS})
+    elif args.pos_type == "xpos":
+        tokenizer.add_special_tokens({"additional_special_tokens": XPOS_TAGS})
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.save_pretrained(args.experiment_dir)
     optimizer = optim.AdamW(params=model.parameters(), lr=args.learning_rate)
@@ -241,7 +249,8 @@ if __name__ == "__main__":
     train_enc = process_stanza(stanza_tokenizer=nlp,
                                hf_tokenizer=tokenizer,
                                examples=train_df["text"].tolist(),
-                               max_length=args.max_length)
+                               max_length=args.max_length,
+                               pos_type=args.pos_type)
     label_probas = torch.zeros((train_df.shape[0], 2), dtype=torch.float32)
     if args.use_label_probas:
         label_probas = torch.tensor(train_df["proba_binary_label"].tolist(), dtype=torch.float32)
@@ -254,7 +263,8 @@ if __name__ == "__main__":
     dev_enc = process_stanza(stanza_tokenizer=nlp,
                              hf_tokenizer=tokenizer,
                              examples=dev_df["text"].tolist(),
-                             max_length=args.max_length)
+                             max_length=args.max_length,
+                             pos_type=args.pos_type)
     # Note: we do not want to change dev labels (0.5/0.5 would get turned from 1 to 0)
     label_probas = torch.zeros((dev_df.shape[0], 2), dtype=torch.float32)
     label_probas[torch.arange(dev_df.shape[0]), dev_df["binary_label"].tolist()] = 1.0
@@ -268,7 +278,8 @@ if __name__ == "__main__":
         test_enc = process_stanza(stanza_tokenizer=nlp,
                                   hf_tokenizer=tokenizer,
                                   examples=test_df["text"].tolist(),
-                                  max_length=args.max_length)
+                                  max_length=args.max_length,
+                                  pos_type=args.pos_type)
 
         if "binary_label" in test_df.columns:
             # Note: we do not want to change test labels (0.5/0.5 would get turned from 1 to 0)
@@ -391,7 +402,7 @@ if __name__ == "__main__":
 
     if test_enc is not None:
         del model
-        model = XPOSRobertaForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
+        model = POSRobertaForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
         test_preds = []
         test_probas = []
         test_correct = None
