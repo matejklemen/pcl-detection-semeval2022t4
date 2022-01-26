@@ -24,13 +24,16 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 
 from src.data.utils import load_binary_dataset, PCLTransformersDataset
-from src.models.utils import SENTIMENT_TAGS
+from src.models.utils import SENTIMENT_TAGS, optimize_threshold
 
 """ Note: This is just a lazy copy of train_transformers_ner.py with minor modifications to include UPOS tags instead 
 of NER tags. """
 parser = argparse.ArgumentParser()
 parser.add_argument("--use_label_probas", action="store_true",
                     help="Whether to use soft labels (label probas) instead of one-hot encoded labels")
+parser.add_argument("--mcd_rounds", type=int, default=0)
+parser.add_argument("--optimize_decision", type=str, default=None,
+                    choices=[None, "during_training", "after_training"])
 
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--train_path", type=str,
@@ -45,6 +48,7 @@ parser.add_argument("--pretrained_name_or_path", type=str, default="roberta-base
 
 parser.add_argument("--max_epochs", type=int, default=10)
 parser.add_argument("--learning_rate", type=float, default=2e-5)
+parser.add_argument("--accumulation_steps", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=8)
 parser.add_argument("--max_length", type=int, default=158)  # roberta-base: .95 = 114, .99 = 158
 parser.add_argument("--eval_every_n_examples", type=int, default=3000)
@@ -327,6 +331,7 @@ if __name__ == "__main__":
         def is_better(_curr, _best):
             return _curr > _best
 
+    best_pos_thresh = None
     ce_loss = CrossEntropyLoss()
     logging.info("Starting training...")
     ts = time()
@@ -344,16 +349,27 @@ if __name__ == "__main__":
 
             # TRAINING ###
             model.train()
-            for _curr_batch in tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
-                                    total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size)):
+            for idx_batch, _curr_batch in enumerate(
+                    tqdm(DataLoader(curr_train_subset, batch_size=args.batch_size),
+                         total=((len(curr_train_subset) + args.batch_size - 1) // args.batch_size))
+            ):
+                correct_labels = _curr_batch["labels"].to(DEVICE)
+                del _curr_batch["labels"]
                 curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
 
                 logits = model(**curr_batch)["logits"]
-                loss = ce_loss(logits, curr_batch["labels"])
+                loss = ce_loss(logits, correct_labels)
 
                 train_loss += float(loss)
+                loss /= args.accumulation_steps
 
                 loss.backward()
+                if idx_batch % args.accumulation_steps == (args.accumulation_steps - 1):
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+            # Left-over loss in case num_training_batches % accumulation_steps > 0
+            if len(curr_train_subset) % (args.batch_size * args.accumulation_steps) > 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -421,30 +437,99 @@ if __name__ == "__main__":
     logging.info(f"Training took {te - ts:.3f}s /\n"
                  f"best validation {OPTIMIZED_METRIC}: {best_dev_metric_value:.3f}")
 
+    ########################################################
+    # Perform decision boundary tuning in a setting equivalent to the test one, but on dev data
+    if args.optimize_decision == "after_training":
+        del model
+        model = SentiWordnetRobertaForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
+        if args.mcd_rounds > 0:
+            model.train()
+        else:
+            model.eval()
+
+        dev_probas = []
+        dev_correct = None
+        num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
+
+        with torch.no_grad():
+            for idx_round in range(num_pred_rounds):
+                curr_dev_probas = []
+
+                for _curr_batch in tqdm(DataLoader(dev_dataset, batch_size=args.batch_size),
+                                        total=((len(dev_dataset) + args.batch_size - 1) // args.batch_size)):
+                    curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+                    del curr_batch["labels"]
+                    res = model(**curr_batch)
+                    probas = torch.softmax(res["logits"], dim=-1).cpu()
+                    curr_dev_probas.append(probas)
+
+                dev_probas.append(torch.cat(curr_dev_probas))
+
+        dev_probas = torch.stack(dev_probas)
+        mean_dev_probas = dev_probas.mean(dim=0).cpu().numpy()
+        dev_correct = torch.argmax(dev_dataset.labels, dim=-1).numpy()
+        best_pos_thresh, curr_best_metric_value = optimize_threshold(dev_correct, mean_dev_probas[:, 1],
+                                                                     validated_metric=OPTIMIZED_METRIC)
+        dev_preds = (mean_dev_probas[:, 1] >= best_pos_thresh).astype(np.int32)
+        dev_metrics = {
+            "f1_score": f1_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
+            "p_score": precision_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary'),
+            "r_score": recall_score(y_true=dev_correct, y_pred=dev_preds, pos_label=1, average='binary')
+        }
+        logging.info(f"[after training] T={best_pos_thresh}, "
+                     f"P={dev_metrics['p_score']:.3f}, "
+                     f"R={dev_metrics['r_score']:.3f}, "
+                     f"F1={dev_metrics['f1_score']:.3f}")
+
+    #########################################################
+    logging.info("Starting prediction...")
+    num_pred_rounds = args.mcd_rounds if args.mcd_rounds > 0 else 1
+
     if test_enc is not None:
         del model
         model = SentiWordnetRobertaForSequenceClassification.from_pretrained(args.experiment_dir, return_dict=True).to(DEVICE)
-        test_preds = []
+        if args.mcd_rounds > 0:
+            model.train()
+        else:
+            model.eval()
+
         test_probas = []
         test_correct = None
-
-        with torch.no_grad():
-            model.eval()
-            for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=DEV_BATCH_SIZE),
-                                    total=((len(test_dataset) + DEV_BATCH_SIZE - 1) // DEV_BATCH_SIZE)):
-                curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
-
-                res = model(**curr_batch)
-                probas = torch.softmax(res["logits"], dim=-1)
-                preds = torch.argmax(probas, dim=-1).cpu()
-
-                test_preds.append(preds)
-                test_probas.append(probas[:, 1].cpu())  # Save probability of positive label
-
-        test_probas = torch.cat(test_probas).numpy()
-        test_preds = torch.cat(test_preds).numpy()
         if "binary_label" in test_df.columns:
             test_correct = torch.argmax(test_dataset.labels, dim=-1).numpy()
+            delattr(test_dataset, "labels")
+            test_dataset.valid_attrs.remove("labels")
+
+        with torch.no_grad():
+            for idx_round in range(num_pred_rounds):
+                curr_test_probas = []
+
+                for _curr_batch in tqdm(DataLoader(test_dataset, batch_size=DEV_BATCH_SIZE),
+                                        total=((len(test_dataset) + DEV_BATCH_SIZE - 1) // DEV_BATCH_SIZE)):
+                    curr_batch = {_k: _v.to(DEVICE) for _k, _v in _curr_batch.items()}
+
+                    res = model(**curr_batch)
+                    probas = torch.softmax(res["logits"], dim=-1).cpu()
+                    curr_test_probas.append(probas)
+
+                test_probas.append(torch.cat(curr_test_probas))
+
+        test_probas = torch.cat(test_probas).numpy()
+        mean_test_probas = test_probas.mean(dim=0)
+        if num_pred_rounds > 1:
+            sd_test_probas = test_probas.std(dim=0)
+        else:
+            logging.info("Because only 1 prediction round is used, standard deviation is set to 0...")
+            sd_test_probas = torch.zeros_like(mean_test_probas, dtype=torch.float32)
+
+        if args.optimize_decision is None:
+            test_preds = torch.argmax(mean_test_probas, dim=-1).cpu().numpy()
+        else:
+            logging.info(f"Using T={best_pos_thresh}")
+            np_mean_test_probas = mean_test_probas.numpy()
+            test_preds = (np_mean_test_probas[:, 1] >= best_pos_thresh).astype(np.int32)
+
+        if "binary_label" in test_df.columns:
             test_metrics = {
                 "f1_score": f1_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
                 "p_score": precision_score(y_true=test_correct, y_pred=test_preds, pos_label=1, average='binary'),
@@ -456,7 +541,9 @@ if __name__ == "__main__":
 
         pd.DataFrame({
             "pred_binary_label": test_preds.tolist(),
-            "proba_pcl_binary_label": test_probas.tolist()
+            "proba_pcl_binary_label": mean_test_probas[:, 1].tolist(),
+            # for each example, store predicted probabilities in each prediction round
+            "raw_proba": [test_probas[:, _idx, :].tolist() for _idx in range(len(test_dataset))]
         }).to_csv(
             os.path.join(args.experiment_dir, f"pred_{test_fname}"), sep="\t", index=False
         )
