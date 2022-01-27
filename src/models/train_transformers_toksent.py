@@ -514,7 +514,7 @@ if __name__ == "__main__":
 
                 test_probas.append(torch.cat(curr_test_probas))
 
-        test_probas = torch.cat(test_probas).numpy()
+        test_probas = torch.cat(test_probas)
         mean_test_probas = test_probas.mean(dim=0)
         if num_pred_rounds > 1:
             sd_test_probas = test_probas.std(dim=0)
